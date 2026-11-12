@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050403">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Argentina a tus pies · Editor de videos</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="preload" href="assets/fonts/cinzel-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="brand-1">Argentina</span><span class="brand-2">a tus pies</span>
+    </div>
+    <div class="brand-sub">Editor de videos del club</div>
+  </header>
+
+  <main class="layout">
+    <section class="stage">
+      <div class="canvas-wrap" id="canvasWrap">
+        <canvas id="preview"></canvas>
+        <label class="empty-hint" id="emptyHint" for="mainFile">
+          <span class="big">＋</span>
+          <span>Tocá acá para subir tu video</span>
+          <small>Filmado con el celular, vertical idealmente</small>
+        </label>
+        <div class="busy" id="busy" hidden><div class="spinner"></div><span id="busyText">Cargando…</span></div>
+      </div>
+      <div class="transport">
+        <button class="btn-play" id="playBtn" aria-label="Reproducir">▶</button>
+        <input type="range" id="scrub" min="0" max="1000" value="0" step="1" aria-label="Posición">
+        <span class="time" id="timeLbl">0:00.0 / 0:00.0</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <nav class="tabs" id="tabs">
+        <button data-tab="video" class="on"><b>1</b>Video</button>
+        <button data-tab="intro"><b>2</b>Intro</button>
+        <button data-tab="outro"><b>3</b>Final</button>
+        <button data-tab="graficas"><b>4</b>Gráficas</button>
+        <button data-tab="exportar"><b>5</b>Exportar</button>
+      </nav>
+
+      <!-- 1. VIDEO -->
+      <div class="tab on" id="tab-video">
+        <h2>Tu video</h2>
+        <label class="upload" for="mainFile">
+          <input type="file" id="mainFile" accept="video/*" hidden>
+          <span class="upload-ico">🎬</span>
+          <span id="mainFileName">Elegir video del celular o la compu</span>
+        </label>
+
+        <div id="mainControls" class="disabled">
+          <div class="field">
+            <label>Recortar: empieza en <b id="inLbl">0:00.0</b></label>
+            <input type="range" id="inRange" min="0" max="1000" value="0">
+          </div>
+          <div class="field">
+            <label>Termina en <b id="outLbl">0:00.0</b></label>
+            <input type="range" id="outRange" min="0" max="1000" value="1000">
+          </div>
+          <div class="field">
+            <label>Volumen del video <b id="volLbl">100%</b></label>
+            <input type="range" id="volRange" min="0" max="150" value="100">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Formato para Instagram</label>
+          <div class="seg" id="formatSeg">
+            <button data-v="9x16" class="on">Reels / Historias<small>9:16</small></button>
+            <button data-v="4x5">Feed<small>4:5</small></button>
+            <button data-v="1x1">Cuadrado<small>1:1</small></button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Encuadre del video</label>
+          <div class="seg" id="fitSeg">
+            <button data-v="auto" class="on">Automático</button>
+            <button data-v="cover">Llenar pantalla</button>
+            <button data-v="blur">Completo + fondo</button>
+          </div>
+          <p class="hint">“Completo + fondo” muestra el video entero con un fondo desenfocado (ideal si lo filmaste horizontal).</p>
+        </div>
+        <div class="field">
+          <label>Transición con la intro y el final</label>
+          <div class="seg" id="transSeg">
+            <button data-v="crossfade" class="on">Fundido</button>
+            <button data-v="black">Fundido a negro</button>
+            <button data-v="cut">Corte</button>
+          </div>
+          <div class="seg small" id="transDurSeg">
+            <button data-v="0.3">Rápido</button>
+            <button data-v="0.6" class="on">Normal</button>
+            <button data-v="1.0">Lento</button>
+          </div>
+        </div>
+        <button class="next" data-goto="intro">Siguiente: elegir intro →</button>
+      </div>
+
+      <!-- 2. INTRO -->
+      <div class="tab" id="tab-intro">
+        <h2>Intro</h2>
+        <p class="hint">Lo que se ve antes de tu video.</p>
+        <div class="clip-picker" data-role="intro"></div>
+        <button class="next" data-goto="outro">Siguiente: elegir final →</button>
+      </div>
+
+      <!-- 3. OUTRO -->
+      <div class="tab" id="tab-outro">
+        <h2>Final</h2>
+        <p class="hint">Lo que se ve después de tu video.</p>
+        <div class="clip-picker" data-role="outro"></div>
+        <button class="next" data-goto="graficas">Siguiente: gráficas →</button>
+      </div>
+
+      <!-- 4. GRÁFICAS -->
+      <div class="tab" id="tab-graficas">
+        <h2>Gráficas sobre el video</h2>
+        <div class="logo-box">
+          <div class="logo-prev" id="logoPrev"><span>Sin logo</span></div>
+          <div>
+            <b>Logo del club</b>
+            <p class="hint">PNG o JPG con fondo negro: el negro desaparece (se suma como luz).</p>
+            <label class="btn-sm" for="logoFile">Subir logo<input type="file" id="logoFile" accept="image/*" hidden></label>
+            <button class="btn-sm ghost" id="logoClear" hidden>Quitar</button>
+          </div>
+        </div>
+        <div class="add-row">
+          <span>Agregar:</span>
+          <button data-add="zocalo">Zócalo</button>
+          <button data-add="titulo">Título dorado</button>
+          <button data-add="mosca">Mosca / logo</button>
+          <button data-add="brillos">Brillos</button>
+          <button data-add="marco">Marco dorado</button>
+        </div>
+        <div id="ovList"></div>
+        <button class="next" data-goto="exportar">Siguiente: exportar →</button>
+      </div>
+
+      <!-- 5. EXPORTAR -->
+      <div class="tab" id="tab-exportar">
+        <h2>Exportar para Instagram</h2>
+        <div class="summary" id="summary"></div>
+        <button class="cta" id="exportBtn">✨ Crear video</button>
+        <div class="progress" id="progress" hidden>
+          <div class="bar"><i id="progBar"></i></div>
+          <span id="progText">0%</span>
+          <p class="hint warn">No cierres esta pantalla ni cambies de app mientras se crea el video. Tarda lo mismo que dura el video.</p>
+          <button class="btn-sm ghost" id="cancelBtn">Cancelar</button>
+        </div>
+        <div class="result" id="result" hidden>
+          <video id="resultVideo" controls playsinline></video>
+          <div class="result-actions">
+            <button class="cta" id="shareBtn">📲 Guardar / Compartir</button>
+            <a class="btn-sm" id="downloadBtn" download>⬇ Descargar archivo</a>
+          </div>
+          <p class="hint" id="resultInfo"></p>
+        </div>
+        <p class="hint" id="browserInfo"></p>
+      </div>
+    </section>
+  </main>
+
+  <template id="clipPickerTpl">
+    <div class="cards"></div>
+    <div class="gen-panel" hidden>
+      <h3>Generador de título dorado</h3>
+      <div class="field"><label>Línea 1</label><input type="text" data-g="line1" maxlength="40"></div>
+      <div class="field"><label>Línea 2</label><input type="text" data-g="line2" maxlength="40"></div>
+      <div class="field"><label>Texto chico</label><input type="text" data-g="sub" maxlength="60"></div>
+      <div class="field row">
+        <label>Duración <b data-lbl="dur">4 s</b></label>
+        <input type="range" data-g="dur" min="2" max="10" step="0.5">
+      </div>
+      <label class="check"><input type="checkbox" data-g="showLogo"> Mostrar el logo del club</label>
+      <label class="check"><input type="checkbox" data-g="sound"> Sonido de brillos</label>
+      <button class="btn-sm" data-act="dl-gen">⬇ Bajar este título como MP4</button>
+      <p class="hint">Sirve para sumar este título a la biblioteca de intros.</p>
+    </div>
+  </template>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

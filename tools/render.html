@@ -1,0 +1,24 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../css/style.css"></head>
+<body style="margin:0;background:#000">
+<canvas id="c" width="1080" height="1920"></canvas>
+<script type="module">
+  // Página auxiliar para renderizar intros/outros base cuadro a cuadro (ver tools/render-clips.mjs)
+  import { drawCard } from '../js/graphics.js';
+  import { makeShimmer, audioBufferToWav } from '../js/sound.js';
+  import { loadFonts } from '../js/util.js';
+  const c = document.getElementById('c');
+  const ctx = c.getContext('2d');
+  let params = null;
+  window.setup = async (p, w = 1080, hh = 1920) => { c.width = w; c.height = hh; params = p; await loadFonts(); return true; };
+  window.frame = (t) => { drawCard(ctx, t, c.width, c.height, params, 1, null); return c.toDataURL('image/jpeg', 0.95); };
+  window.wav = async (dur, seed) => {
+    const b = await makeShimmer(dur, seed);
+    const ab = audioBufferToWav(b);
+    let s = ''; const u = new Uint8Array(ab);
+    for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+    return btoa(s);
+  };
+  window.ready = true;
+</script>
+</body></html>

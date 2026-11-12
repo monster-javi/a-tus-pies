@@ -1,0 +1,30 @@
+{
+  "intros": [
+    {
+      "id": "intro-aatp",
+      "name": "Argentina a tus pies",
+      "src": "assets/library/intro-aatp.mp4",
+      "poster": "assets/library/intro-aatp.jpg"
+    },
+    {
+      "id": "intro-mickyfest",
+      "name": "Mickyfest por dentro",
+      "src": "assets/library/intro-mickyfest.mp4",
+      "poster": "assets/library/intro-mickyfest.jpg"
+    }
+  ],
+  "outros": [
+    {
+      "id": "outro-gracias",
+      "name": "¡Gracias!",
+      "src": "assets/library/outro-gracias.mp4",
+      "poster": "assets/library/outro-gracias.jpg"
+    },
+    {
+      "id": "outro-hasta-pronto",
+      "name": "Hasta la próxima",
+      "src": "assets/library/outro-hasta-pronto.mp4",
+      "poster": "assets/library/outro-hasta-pronto.jpg"
+    }
+  ]
+}
