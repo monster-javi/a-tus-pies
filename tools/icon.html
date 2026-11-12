@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../css/style.css"></head>
+<body style="margin:0;background:#000">
+<canvas id="c" width="1024" height="1024"></canvas>
+<script type="module">
+  // Ícono "LM" dorado (ver tools/render-icon.mjs)
+  import { GoldText, drawGlint } from '../js/gold.js';
+  import { loadFonts } from '../js/util.js';
+  const c = document.getElementById('c'), x = c.getContext('2d');
+  window.draw = async (round) => {
+    await loadFonts();
+    const S = c.width;
+    x.clearRect(0, 0, S, S);
+    x.save();
+    if (round) { const r = S * 0.22; x.beginPath(); x.roundRect(0, 0, S, S, r); x.clip(); }
+    x.fillStyle = '#050403'; x.fillRect(0, 0, S, S);
+    const g = x.createRadialGradient(S / 2, S * 0.45, 0, S / 2, S / 2, S * 0.7);
+    g.addColorStop(0, 'rgba(90,58,16,0.55)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = g; x.fillRect(0, 0, S, S);
+    // aro dorado fino
+    const rg = x.createLinearGradient(0, 0, S, S);
+    rg.addColorStop(0, '#8a6020'); rg.addColorStop(0.3, '#f6dc8c'); rg.addColorStop(0.55, '#b8862f'); rg.addColorStop(0.8, '#fff0b5'); rg.addColorStop(1, '#8a6020');
+    x.strokeStyle = rg; x.lineWidth = S * 0.018;
+    x.beginPath(); x.arc(S / 2, S / 2, S * 0.42, 0, Math.PI * 2); x.stroke();
+    x.lineWidth = S * 0.006;
+    x.beginPath(); x.arc(S / 2, S / 2, S * 0.392, 0, Math.PI * 2); x.stroke();
+    const t = new GoldText([{ text: 'LM', size: 470, weight: 700, tracking: -0.01 }], { glintCount: 0 });
+    const scale = S / 1080;
+    const m = t.measure(scale);
+    t.draw(x, S / 2, S / 2 + S * 0.015, scale, { glow: 0.5, sweep: 0.62 });
+    x.globalCompositeOperation = 'lighter';
+    drawGlint(x, S / 2 + m.w * 0.36, S / 2 - m.h * 0.47, S * 0.11, 1, true);
+    drawGlint(x, S / 2 - m.w * 0.44, S / 2 + m.h * 0.45, S * 0.05, 0.8, false);
+    x.restore();
+    return c.toDataURL('image/png');
+  };
+  window.ready = true;
+</script>
+</body></html>
