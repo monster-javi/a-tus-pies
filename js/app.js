@@ -3,6 +3,7 @@ import { Engine, FORMATS, makeVideo, decodeAudio, pickMime } from './engine.js';
 import { makeShimmer } from './sound.js';
 import { clearTextCache } from './graphics.js';
 import { loadFonts, fmtTime, clamp } from './util.js';
+import { loadPhoto, freePhoto, photosDuration, PHOTO_PRESETS } from './photos.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -21,10 +22,12 @@ const h = (tag, attrs = {}, ...kids) => {
 const STORE = 'aatp:v1';
 const DEFAULTS = {
   format: '9x16', fit: 'auto', trans: { type: 'crossfade', dur: 0.6 }, volume: 1,
+  mode: 'video', photoDur: 3.5, photoTr: 0.9, preset: 'random',
+  music: { vol: -3, bed: -16 },
   intro: { choice: null }, outro: { choice: null },
   gen: {
-    intro: { line1: 'Argentina', line2: 'a tus pies', sub: 'Club de fans de Luis Miguel', dur: 4.5, showLogo: false, sound: true },
-    outro: { line1: '¡Gracias!', line2: '', sub: 'Argentina a tus pies', dur: 4, showLogo: true, sound: true },
+    intro: { line1: 'Argentina', line2: 'a tus pies', sub: 'Club de fans de Luis Miguel', sub2: '', dur: 4.5, showLogo: false, sound: true },
+    outro: { line1: '¡Gracias!', line2: '', sub: 'Argentina a tus pies', sub2: 'Club de fans de Luis Miguel', dur: 4, showLogo: true, sound: true },
   },
   overlays: [
     { id: 1, type: 'zocalo', style: 'dorado', name: 'Argentina a tus pies', desc: 'Club de fans de Luis Miguel', start: 1, dur: 5, y: 0.8 },
@@ -34,6 +37,7 @@ const DEFAULTS = {
 let state;
 try { state = { ...structuredClone(DEFAULTS), ...JSON.parse(localStorage.getItem(STORE) || '{}') }; }
 catch (e) { state = structuredClone(DEFAULTS); }
+state.music = { ...DEFAULTS.music, ...state.music };
 state.gen = { intro: { ...DEFAULTS.gen.intro, ...state.gen?.intro }, outro: { ...DEFAULTS.gen.outro, ...state.gen?.outro } };
 let saveT = 0;
 const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* */ } }, 300); };
@@ -82,6 +86,7 @@ function goTab(name) {
   $$('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
   $$('.tab').forEach((t) => t.classList.toggle('on', t.id === 'tab-' + name));
   if (name === 'exportar') updateSummary();
+  if (name === 'musica') requestAnimationFrame(drawWave);
   if (name === 'intro' && engine.sources.intro) engine.seek(Math.min(1.8, engine.total));
   if (name === 'outro' && engine.sources.outro) { const s = engine.segments.find((x) => x.role === 'outro'); if (s) engine.seek(s.start + Math.min(1.8, s.dur)); }
   $('.panel').scrollIntoView({ block: 'nearest' });
@@ -95,7 +100,7 @@ const scrub = $('#scrub');
 let scrubbing = false, wasPlaying = false;
 
 playBtn.addEventListener('click', () => {
-  if (!engine.segments.length) { $('#mainFile').click(); return; }
+  if (!engine.segments.length) { $(state.mode === 'fotos' ? '#photoFiles' : '#mainFile').click(); return; }
   if (engine.exporting) return;
   engine.unlock(); // sincrónico dentro del toque (iOS)
   engine.toggle();
@@ -123,16 +128,16 @@ $('#mainFile').addEventListener('change', async (e) => {
   const tok = ++mainToken;
   busy('Cargando video…');
   try {
-    if (engine.sources.main) { try { URL.revokeObjectURL(engine.sources.main.el.src); engine.sources.main.el.remove(); } catch (x) { /* */ } }
+    if (videoSrc) { try { URL.revokeObjectURL(videoSrc.el.src); videoSrc.el.remove(); } catch (x) { /* */ } }
     engine.pause();
     const url = URL.createObjectURL(file);
     const el = await makeVideo(url);
     if (tok !== mainToken) return;
     const src = { kind: 'video', el, file, duration: el.duration, in: 0, out: el.duration, volume: state.volume };
-    engine.sources.main = src;
+    videoSrc = src;
+    applyMode();
     engine.unlockElement(el);
     $('#mainFileName').textContent = file.name || 'Video cargado';
-    $('#emptyHint').hidden = true;
     $('#mainControls').classList.remove('disabled');
     $('#inRange').value = 0; $('#outRange').value = 1000;
     updateTrimLabels();
@@ -151,12 +156,12 @@ $('#mainFile').addEventListener('change', async (e) => {
 });
 
 function updateTrimLabels() {
-  const m = engine.sources.main; if (!m) return;
+  const m = videoSrc; if (!m) return;
   $('#inLbl').textContent = fmtTime(m.in);
   $('#outLbl').textContent = fmtTime(m.out);
 }
 function trim(which) {
-  const m = engine.sources.main; if (!m) return;
+  const m = videoSrc; if (!m) return;
   const d = m.duration;
   let a = ($('#inRange').value / 1000) * d, b = ($('#outRange').value / 1000) * d;
   const minLen = Math.min(1, d);
@@ -178,7 +183,7 @@ $('#volLbl').textContent = $('#volRange').value + '%';
 $('#volRange').addEventListener('input', (e) => {
   state.volume = e.target.value / 100;
   $('#volLbl').textContent = e.target.value + '%';
-  if (engine.sources.main) { engine.sources.main.volume = state.volume; engine.rebuild(); if (engine.playing) engine.play(engine.t); }
+  if (videoSrc) { videoSrc.volume = state.volume; engine.rebuild(); if (engine.playing) engine.play(engine.t); }
   save();
 });
 
@@ -186,6 +191,230 @@ setSeg('#formatSeg', state.format, (v) => { state.format = v; engine.setFormat(v
 setSeg('#fitSeg', state.fit, (v) => { state.fit = v; engine.fit = v; engine.refresh(); save(); });
 setSeg('#transSeg', state.trans.type, (v) => { state.trans.type = v; engine.transition.type = v; save(); rebuild(); });
 setSeg('#transDurSeg', String(state.trans.dur.toFixed(1) === '1.0' ? '1.0' : state.trans.dur), (v) => { state.trans.dur = +v; engine.transition.dur = +v; save(); rebuild(); });
+
+// ---------- Modo: video o fotos ----------
+let videoSrc = null;
+const photoSrc = { kind: 'photos', photos: [], photoDur: state.photoDur, photoTr: state.photoTr, preset: state.preset, seed: 1, in: 0, out: 0, duration: 0, volume: 1 };
+
+function syncPhotoSrc() {
+  photoSrc.photoDur = state.photoDur; photoSrc.photoTr = state.photoTr; photoSrc.preset = state.preset;
+  photoSrc.duration = photosDuration(photoSrc);
+  photoSrc.in = 0; photoSrc.out = photoSrc.duration;
+}
+
+function applyMode() {
+  const fotos = state.mode === 'fotos';
+  $('#videoPanel').hidden = fotos;
+  $('#photosPanel').hidden = !fotos;
+  syncPhotoSrc();
+  if (engine.playing) engine.pause();
+  engine.sources.main = fotos ? (photoSrc.photos.length ? photoSrc : null) : videoSrc;
+  const eh = $('#emptyHint');
+  eh.hidden = !!engine.sources.main;
+  eh.setAttribute('for', fotos ? 'photoFiles' : 'mainFile');
+  $('span:nth-child(2)', eh).textContent = fotos ? 'Tocá acá para agregar tus fotos' : 'Tocá acá para subir tu video';
+  $('small', eh).textContent = fotos ? 'Se animan solas, en el orden que elijas' : 'Filmado con el celular, vertical idealmente';
+  updateMusicUi();
+  rebuild();
+}
+
+setSeg('#modeSeg', state.mode, (v) => {
+  state.mode = v; save(); applyMode();
+  const m = engine.mainSeg(); if (m) engine.seek(m.start + Math.min(1, m.dur / 2));
+});
+
+// ---------- Fotos ----------
+$('#presetSeg').append(...PHOTO_PRESETS.map(([v, l]) => h('button', { type: 'button', 'data-v': v }, l)));
+setSeg('#presetSeg', state.preset, (v) => { state.preset = v; save(); syncPhotoSrc(); engine.refresh(); });
+setSeg('#photoTrSeg', String(state.photoTr), (v) => { state.photoTr = +v; save(); syncPhotoSrc(); rebuild(); });
+$('#photoDur').value = state.photoDur;
+$('#photoDurLbl').textContent = state.photoDur + ' s';
+$('#photoDur').addEventListener('input', (e) => {
+  state.photoDur = +e.target.value; $('#photoDurLbl').textContent = state.photoDur + ' s';
+  save(); syncPhotoSrc(); rebuild();
+});
+
+$('#photoFiles').addEventListener('change', async (e) => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  if (!files.length) return;
+  engine.unlock();
+  if (state.mode !== 'fotos') { state.mode = 'fotos'; save(); $$('#modeSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === 'fotos')); }
+  let bad = 0;
+  for (let i = 0; i < files.length; i++) {
+    busy(`Preparando fotos… ${i + 1} de ${files.length}`);
+    try { photoSrc.photos.push(await loadPhoto(files[i])); } catch (err) { bad++; }
+  }
+  busy(null);
+  if (bad) toast(`No pude abrir ${bad} ${bad === 1 ? 'foto' : 'fotos'}.`);
+  renderPhotos();
+  applyMode();
+  const m = engine.mainSeg(); if (m) engine.seek(m.start + Math.min(1, m.dur / 2));
+});
+
+function photoStart(i) { const m = engine.mainSeg(); return m ? m.start + i * (photoSrc.photoDur - Math.min(photoSrc.photoTr, photoSrc.photoDur / 2)) : 0; }
+
+function renderPhotos() {
+  const g = $('#photoGrid');
+  g.innerHTML = '';
+  const n = photoSrc.photos.length;
+  $('#photoCount').textContent = n
+    ? `${n} ${n === 1 ? 'foto' : 'fotos'} · ${fmtTime(photosDuration(photoSrc))}. Usá ◀ ▶ para cambiar el orden. Tocá una foto para verla.`
+    : 'Todavía no agregaste fotos. El orden en que las subís es el orden del video.';
+  photoSrc.photos.forEach((p, i) => {
+    const move = (d) => {
+      const j = i + d; if (j < 0 || j >= n) return;
+      [photoSrc.photos[i], photoSrc.photos[j]] = [photoSrc.photos[j], photoSrc.photos[i]];
+      renderPhotos(); engine.seek(photoStart(j) + 0.8);
+    };
+    const bL = h('button', { type: 'button', title: 'Antes', disabled: i === 0 }, '◀');
+    const bR = h('button', { type: 'button', title: 'Después', disabled: i === n - 1 }, '▶');
+    const bX = h('button', { type: 'button', title: 'Quitar' }, '✕');
+    bL.addEventListener('click', (e) => { e.stopPropagation(); move(-1); });
+    bR.addEventListener('click', (e) => { e.stopPropagation(); move(1); });
+    bX.addEventListener('click', (e) => {
+      e.stopPropagation();
+      freePhoto(photoSrc.photos.splice(i, 1)[0]);
+      renderPhotos(); applyMode();
+    });
+    const el = h('div', { class: 'photo' }, h('span', { class: 'num' }, String(i + 1)), h('div', { class: 'bar' }, bL, bR, bX));
+    el.style.backgroundImage = `url("${p.url}")`;
+    el.addEventListener('click', () => engine.seek(photoStart(i) + Math.min(1.2, photoSrc.photoDur / 2)));
+    g.append(el);
+  });
+}
+
+// ---------- Música ----------
+let musicInfo = null; // { name, buffer, peaks }
+const dbToGain = (db) => Math.pow(10, db / 20);
+
+function pushMusic() {
+  if (!musicInfo) { engine.setMusic(null); return; }
+  engine.setMusic({ buffer: musicInfo.buffer, offset: musicInfo.offset, vol: dbToGain(state.music.vol), bed: dbToGain(state.music.bed) });
+}
+
+function updateMusicUi() {
+  const fotos = state.mode === 'fotos';
+  $('#musicNag').hidden = !!musicInfo;
+  $('#tabMusica').classList.toggle('nag', fotos && !musicInfo);
+  $('#bedField').hidden = fotos;
+  $('#musicPhotoHint').hidden = !fotos;
+  if (musicInfo) {
+    const left = musicInfo.buffer.duration - musicInfo.offset;
+    const sh = $('#musicShort');
+    sh.hidden = !(engine.total && left < engine.total - 0.5);
+    sh.textContent = sh.hidden ? '' : `Desde este punto la canción dura ${fmtTime(left)} y el clip ${fmtTime(engine.total)}: se va a apagar antes del final. Elegí un tramo más temprano.`;
+    drawWave();
+  }
+}
+
+$('#musicVol').value = state.music.vol; $('#musicVolLbl').textContent = state.music.vol + ' dB';
+$('#musicBed').value = state.music.bed; $('#musicBedLbl').textContent = state.music.bed + ' dB';
+$('#musicVol').addEventListener('input', (e) => { state.music.vol = +e.target.value; $('#musicVolLbl').textContent = e.target.value + ' dB'; save(); pushMusic(); });
+$('#musicBed').addEventListener('input', (e) => { state.music.bed = +e.target.value; $('#musicBedLbl').textContent = e.target.value + ' dB'; save(); pushMusic(); });
+
+$('#musicFile').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  engine.unlock();
+  busy('Leyendo la música…');
+  try {
+    const buffer = await decodeAudio(await f.arrayBuffer());
+    const ch = buffer.getChannelData(0), N = 600, step = Math.max(1, Math.floor(ch.length / N));
+    const peaks = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      let mx = 0; const st = i * step;
+      for (let j = 0; j < step && st + j < ch.length; j += 16) { const v = Math.abs(ch[st + j]); if (v > mx) mx = v; }
+      peaks[i] = mx;
+    }
+    const top = Math.max(0.01, ...peaks);
+    for (let i = 0; i < N; i++) peaks[i] /= top;
+    musicInfo = { name: f.name, buffer, peaks, offset: 0 };
+    $('#musicName').textContent = f.name;
+    $('#musicControls').hidden = false;
+    $('#musicOffLbl').textContent = fmtTime(0);
+    pushMusic(); updateMusicUi(); updateSummary();
+  } catch (err) {
+    console.error(err);
+    toast('No pude leer el sonido de ese archivo. Probá con un MP3 o un MP4 con audio.');
+  } finally { busy(null); }
+});
+$('#musicClear').addEventListener('click', () => {
+  engine.stopMusicPreview();
+  musicInfo = null; pushMusic();
+  $('#musicControls').hidden = true;
+  $('#musicName').textContent = 'Elegir música (MP3, o un MP4 del que se usa solo el sonido)';
+  updateMusicUi(); updateSummary();
+});
+$('#musicListen').addEventListener('click', () => {
+  if (!musicInfo) return;
+  engine.unlock();
+  if (engine._mprev) { engine.stopMusicPreview(); return; }
+  engine.previewMusic(musicInfo.offset, Math.min(10, musicInfo.buffer.duration - musicInfo.offset));
+  animWave();
+});
+
+const wave = $('#wave');
+function drawWave() {
+  if (!musicInfo) return;
+  const r = window.devicePixelRatio || 1;
+  const W = Math.max(100, wave.clientWidth) * r, H = 90 * r;
+  if (wave.width !== W) wave.width = W;
+  wave.height = H;
+  const x = wave.getContext('2d');
+  const D = musicInfo.buffer.duration;
+  const winLen = Math.min(D, engine.total || 15);
+  const ws = (musicInfo.offset / D) * W, ww = Math.max(4 * r, (winLen / D) * W);
+  x.clearRect(0, 0, W, H);
+  x.fillStyle = 'rgba(212,169,74,0.16)';
+  x.fillRect(ws, 0, ww, H);
+  const N = musicInfo.peaks.length, bw = W / N;
+  for (let i = 0; i < N; i++) {
+    const px = i * bw, v = musicInfo.peaks[i];
+    const bh = Math.max(1, v * (H * 0.8));
+    x.fillStyle = px >= ws && px <= ws + ww ? '#f3dc94' : 'rgba(163,150,122,0.45)';
+    x.fillRect(px, (H - bh) / 2, Math.max(1, bw - 0.5 * r), bh);
+  }
+  x.strokeStyle = '#d4a94a'; x.lineWidth = 2 * r;
+  x.strokeRect(ws + r, r, ww - 2 * r, H - 2 * r);
+  const pos = engine.musicPreviewPos();
+  if (pos != null) { x.fillStyle = '#fff'; x.fillRect((pos / D) * W, 0, 2 * r, H); }
+}
+function animWave() { drawWave(); if (engine._mprev) requestAnimationFrame(animWave); else drawWave(); }
+let dragX = null, dragOff = 0;
+wave.parentElement.addEventListener('pointerdown', (e) => {
+  if (!musicInfo) return;
+  engine.stopMusicPreview();
+  wave.parentElement.setPointerCapture(e.pointerId);
+  const rect = wave.getBoundingClientRect(), D = musicInfo.buffer.duration;
+  const winLen = Math.min(D, engine.total || 15);
+  const t = ((e.clientX - rect.left) / rect.width) * D;
+  // si se toca fuera de la ventana, la centra ahí
+  if (t < musicInfo.offset || t > musicInfo.offset + winLen) musicInfo.offset = clamp(t - winLen / 2, 0, Math.max(0, D - winLen));
+  dragX = e.clientX; dragOff = musicInfo.offset;
+  $('#musicOffLbl').textContent = fmtTime(musicInfo.offset);
+  drawWave();
+});
+wave.parentElement.addEventListener('pointermove', (e) => {
+  if (dragX == null || !musicInfo) return;
+  const rect = wave.getBoundingClientRect(), D = musicInfo.buffer.duration;
+  const winLen = Math.min(D, engine.total || 15);
+  musicInfo.offset = clamp(dragOff + ((e.clientX - dragX) / rect.width) * D, 0, Math.max(0, D - winLen));
+  $('#musicOffLbl').textContent = fmtTime(musicInfo.offset);
+  drawWave();
+});
+const endDrag = () => {
+  if (dragX == null || !musicInfo) return;
+  dragX = null;
+  pushMusic(); updateMusicUi();
+  engine.previewMusic(musicInfo.offset, Math.min(6, musicInfo.buffer.duration - musicInfo.offset));
+  animWave();
+};
+wave.parentElement.addEventListener('pointerup', endDrag);
+wave.parentElement.addEventListener('pointercancel', endDrag);
+window.addEventListener('resize', () => drawWave());
+engine.on('timeline', () => { if (musicInfo) updateMusicUi(); });
 
 // ---------- Intro / Outro ----------
 const clipCache = new Map();
@@ -472,7 +701,10 @@ function updateSummary() {
   const rows = [
     ['Formato', FORMATS[state.format].label],
     ['Intro', choiceName('intro')],
-    ['Tu video', m ? fmtTime((m.out ?? m.duration) - (m.in || 0)) : 'Falta subirlo'],
+    state.mode === 'fotos'
+      ? ['Fotos', m ? `${m.photos.length} fotos · ${fmtTime(m.duration)}` : 'Falta subirlas']
+      : ['Tu video', m ? fmtTime((m.out ?? m.duration) - (m.in || 0)) : 'Falta subirlo'],
+    ['Música', musicInfo ? musicInfo.name : (state.mode === 'fotos' ? '⚠️ Sin música (recomendado sumar una)' : 'Sin música')],
     ['Final', choiceName('outro')],
     ['Gráficas', state.overlays.length ? state.overlays.map((o) => OV_NAMES[o.type]).join(', ') : 'Ninguna'],
     ['Duración total', fmtTime(engine.total)],
@@ -496,7 +728,8 @@ function deliver(blob, name) {
 
 let resultBlob = null, resultName = '';
 $('#exportBtn').addEventListener('click', async () => {
-  if (!engine.sources.main) { toast('Primero subí tu video en el paso 1.'); return; }
+  if (!engine.sources.main) { toast(state.mode === 'fotos' ? 'Primero agregá tus fotos en el paso 1.' : 'Primero subí tu video en el paso 1.'); return; }
+  if (state.mode === 'fotos' && !musicInfo && !confirm('Tu clip de fotos no tiene música. ¿Querés crear el video igual?')) return;
   engine.unlock();
   $('#exportBtn').disabled = true;
   $('#progress').hidden = false; $('#result').hidden = true;
@@ -557,9 +790,11 @@ $('#shareBtn').addEventListener('click', async () => {
     renderPicker(role);
   }
   renderOverlays();
+  renderPhotos();
+  applyMode();
   await Promise.all(['intro', 'outro'].map((r) => applyChoice(r, state[r].choice)));
   engine.seek(Math.min(1.8, engine.total));
 })();
 
 // Para pruebas automatizadas
-window.__aatp = { engine, state };
+window.__aatp = { engine, state, photoSrc, get music() { return musicInfo; } };

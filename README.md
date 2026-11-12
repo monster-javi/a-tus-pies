@@ -6,10 +6,13 @@ Funciona entera en el navegador: los videos no se suben a ningún servidor. Anda
 
 ## Cómo se usa
 
-1. **Video**: subís el video, lo recortás si hace falta y elegís el formato (Reels/Historias 9:16, Feed 4:5 o Cuadrado 1:1) y la transición (fundido, fundido a negro o corte).
-2. **Intro** y 3. **Final**: elegís uno de la biblioteca, el **título dorado editable** (generador con letras doradas, brillos y glitter) o subís un MP4 propio.
-4. **Gráficas**: zócalos, título dorado, mosca/logo, brillos y marco dorado. El **logo del club** se sube con fondo negro y se suma en modo *add* (el negro desaparece).
-5. **Exportar**: crea el video y abre *Guardar / Compartir* (en el iPhone permite guardarlo en Fotos o mandarlo directo a Instagram).
+1. **Clip**: elegís entre **un video** o **fotos**.
+   - Video: lo subís, lo recortás si hace falta y elegís el formato (Reels/Historias 9:16, Feed 4:5 o Cuadrado 1:1) y la transición (fundido, fundido a negro o corte).
+   - Fotos: las fotos se animan suave (acercar, alejar, paneo, suave, quietas o aleatoria) con fundidos entre una y otra. Se usan en el orden en que se suben y se pueden reordenar con ◀ ▶.
+2. **Música** (opcional, recomendada con fotos): un MP3, o un MP4 del que se usa solo el sonido. Elegís el tramo de la canción arrastrando sobre la forma de onda. En la intro y el final suena unos dB más bajo que el original. Mientras suena tu video baja suave y queda de fondo, y con fotos suena durante todo el clip.
+3. **Intro** y 4. **Final**: elegís uno de la biblioteca, el **título dorado editable** (generador con letras doradas, brillos y glitter) o subís un MP4 propio.
+5. **Gráficas**: zócalos, título dorado, mosca/logo, brillos y marco dorado. El **logo del club** se sube con fondo negro y se suma en modo *add* (el negro desaparece).
+6. **Exportar**: crea el video y abre *Guardar / Compartir* (en el iPhone permite guardarlo en Fotos o mandarlo directo a Instagram).
 
 La exportación se hace en tiempo real, así que tarda lo mismo que dura el video. Mientras tanto la pantalla tiene que quedar encendida, sin cambiar de app.
 

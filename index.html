@@ -38,16 +38,23 @@
 
     <section class="panel">
       <nav class="tabs" id="tabs">
-        <button data-tab="video" class="on"><b>1</b>Video</button>
-        <button data-tab="intro"><b>2</b>Intro</button>
-        <button data-tab="outro"><b>3</b>Final</button>
-        <button data-tab="graficas"><b>4</b>Gráficas</button>
-        <button data-tab="exportar"><b>5</b>Exportar</button>
+        <button data-tab="video" class="on"><b>1</b>Clip</button>
+        <button data-tab="musica" id="tabMusica"><b>2</b>Música</button>
+        <button data-tab="intro"><b>3</b>Intro</button>
+        <button data-tab="outro"><b>4</b>Final</button>
+        <button data-tab="graficas"><b>5</b>Gráficas</button>
+        <button data-tab="exportar"><b>6</b>Exportar</button>
       </nav>
 
       <!-- 1. VIDEO -->
       <div class="tab on" id="tab-video">
-        <h2>Tu video</h2>
+        <h2>Tu clip</h2>
+        <div class="seg mode-seg" id="modeSeg">
+          <button data-v="video" class="on">🎬 Un video</button>
+          <button data-v="fotos">🖼 Fotos</button>
+        </div>
+
+        <div id="videoPanel">
         <label class="upload" for="mainFile">
           <input type="file" id="mainFile" accept="video/*" hidden>
           <span class="upload-ico">🎬</span>
@@ -66,6 +73,37 @@
           <div class="field">
             <label>Volumen del video <b id="volLbl">100%</b></label>
             <input type="range" id="volRange" min="0" max="150" value="100">
+          </div>
+        </div>
+        </div>
+
+        <div id="photosPanel" hidden>
+          <label class="upload" for="photoFiles">
+            <input type="file" id="photoFiles" accept="image/*" multiple hidden>
+            <span class="upload-ico">🖼</span>
+            <span>Agregar fotos <small>(se pueden elegir varias)</small></span>
+          </label>
+          <div class="music-nag" id="musicNag">
+            <span>🎵 Las fotos no tienen sonido. <b>Sumale una música</b> para que el video quede completo.</span>
+            <button class="btn-sm" data-goto="musica">Elegir música</button>
+          </div>
+          <p class="hint" id="photoCount">Todavía no agregaste fotos. El orden en que las subís es el orden del video.</p>
+          <div class="photo-grid" id="photoGrid"></div>
+          <div class="field">
+            <label>Cada foto dura <b id="photoDurLbl">3.5 s</b></label>
+            <input type="range" id="photoDur" min="1.5" max="8" step="0.5" value="3.5">
+          </div>
+          <div class="field">
+            <label>Animación de las fotos</label>
+            <div class="seg small" id="presetSeg"></div>
+          </div>
+          <div class="field">
+            <label>Transición entre fotos</label>
+            <div class="seg small" id="photoTrSeg">
+              <button data-v="0.4">Rápida</button>
+              <button data-v="0.9" class="on">Normal</button>
+              <button data-v="1.5">Lenta</button>
+            </div>
           </div>
         </div>
 
@@ -99,10 +137,41 @@
             <button data-v="1.0">Lento</button>
           </div>
         </div>
+        <button class="next" data-goto="musica">Siguiente: música →</button>
+      </div>
+
+      <!-- 2. MÚSICA -->
+      <div class="tab" id="tab-musica">
+        <h2>Música <small class="opt">(opcional)</small></h2>
+        <label class="upload" for="musicFile">
+          <input type="file" id="musicFile" accept="audio/*,video/*,.mp3,.m4a,.mp4,.wav,.aac" hidden>
+          <span class="upload-ico">🎵</span>
+          <span id="musicName">Elegir música (MP3, o un MP4 del que se usa solo el sonido)</span>
+        </label>
+        <div id="musicControls" hidden>
+          <div class="field">
+            <label>Elegí el momento de la canción · empieza en <b id="musicOffLbl">0:00.0</b></label>
+            <div class="wave-wrap"><canvas id="wave" height="90"></canvas></div>
+            <p class="hint">Arrastrá la parte dorada al tramo que quieras. Se escucha un pedacito al soltar.</p>
+            <button class="btn-sm" id="musicListen">▶ Escuchar este tramo</button>
+            <button class="btn-sm ghost" id="musicClear">Quitar música</button>
+          </div>
+          <div class="field">
+            <label>Volumen en la intro y el final <b id="musicVolLbl">-3 dB</b></label>
+            <input type="range" id="musicVol" min="-24" max="0" step="1" value="-3">
+          </div>
+          <div class="field" id="bedField">
+            <label>Volumen de fondo mientras suena tu video <b id="musicBedLbl">-16 dB</b></label>
+            <input type="range" id="musicBed" min="-40" max="-3" step="1" value="-16">
+            <p class="hint">La música baja suave cuando empieza tu video y vuelve a subir en el final.</p>
+          </div>
+          <p class="hint" id="musicPhotoHint" hidden>Con fotos, la música suena durante todo el clip con el volumen de arriba.</p>
+          <p class="hint warn" id="musicShort" hidden></p>
+        </div>
         <button class="next" data-goto="intro">Siguiente: elegir intro →</button>
       </div>
 
-      <!-- 2. INTRO -->
+      <!-- 3. INTRO -->
       <div class="tab" id="tab-intro">
         <h2>Intro</h2>
         <p class="hint">Lo que se ve antes de tu video.</p>
@@ -110,7 +179,7 @@
         <button class="next" data-goto="outro">Siguiente: elegir final →</button>
       </div>
 
-      <!-- 3. OUTRO -->
+      <!-- 4. OUTRO -->
       <div class="tab" id="tab-outro">
         <h2>Final</h2>
         <p class="hint">Lo que se ve después de tu video.</p>
@@ -118,7 +187,7 @@
         <button class="next" data-goto="graficas">Siguiente: gráficas →</button>
       </div>
 
-      <!-- 4. GRÁFICAS -->
+      <!-- 5. GRÁFICAS -->
       <div class="tab" id="tab-graficas">
         <h2>Gráficas sobre el video</h2>
         <div class="logo-box">
@@ -142,7 +211,7 @@
         <button class="next" data-goto="exportar">Siguiente: exportar →</button>
       </div>
 
-      <!-- 5. EXPORTAR -->
+      <!-- 6. EXPORTAR -->
       <div class="tab" id="tab-exportar">
         <h2>Exportar para Instagram</h2>
         <div class="summary" id="summary"></div>
@@ -173,6 +242,7 @@
       <div class="field"><label>Línea 1</label><input type="text" data-g="line1" maxlength="40"></div>
       <div class="field"><label>Línea 2</label><input type="text" data-g="line2" maxlength="40"></div>
       <div class="field"><label>Texto chico</label><input type="text" data-g="sub" maxlength="60"></div>
+      <div class="field"><label>Texto chico (2ª línea)</label><input type="text" data-g="sub2" maxlength="60"></div>
       <div class="field row">
         <label>Duración <b data-lbl="dur">4 s</b></label>
         <input type="range" data-g="dur" min="2" max="10" step="0.5">

@@ -49,7 +49,10 @@ export function cardTitle(p) {
   ], { maxWidth: 940, gap: 0.2, glintCount: 18, seed: 11 });
 }
 export function cardSub(p) {
-  return gold([{ text: (p.sub || '').toUpperCase(), size: 38, weight: 400, tracking: 0.22 }], { maxWidth: 900, glintCount: 3, flat: true, seed: 4 });
+  return gold([
+    { text: (p.sub || '').toUpperCase(), size: 46, weight: 700, tracking: 0.14 },
+    { text: (p.sub2 || '').toUpperCase(), size: 34, weight: 400, tracking: 0.16 },
+  ], { maxWidth: 920, glintCount: 3, flat: true, seed: 4, gap: 0.5 });
 }
 
 export function drawCard(ctx, t, W, H, p, alpha = 1, logo = null) {

@@ -18,9 +18,9 @@ const CLIPS = [
   { id: 'intro-mickyfest', role: 'intro', name: 'Mickyfest por dentro', seed: 3, sound: 7,
     p: { line1: 'MICKYFEST', line2: 'POR DENTRO', sub: 'ARGENTINA A TUS PIES', dur: 4.5 } },
   { id: 'outro-gracias', role: 'outro', name: '¡Gracias!', seed: 2, sound: 9,
-    p: { line1: '¡GRACIAS!', line2: '', sub: 'ARGENTINA A TUS PIES · CLUB DE FANS DE LUIS MIGUEL', dur: 4 } },
+    p: { line1: '¡GRACIAS!', line2: '', sub: 'ARGENTINA A TUS PIES', sub2: 'CLUB DE FANS DE LUIS MIGUEL', dur: 4 } },
   { id: 'outro-hasta-pronto', role: 'outro', name: 'Hasta la próxima', seed: 4, sound: 11,
-    p: { line1: 'HASTA LA', line2: 'PRÓXIMA', sub: 'ARGENTINA A TUS PIES', dur: 4 } },
+    p: { line1: 'HASTA LA', line2: 'PRÓXIMA', sub: 'ARGENTINA A TUS PIES', sub2: 'CLUB DE FANS DE LUIS MIGUEL', dur: 4 } },
 ];
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.json': 'application/json' };

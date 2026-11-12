@@ -1,5 +1,6 @@
 // Línea de tiempo: intro + video + outro, transiciones, preview en tiempo real y exportación
 import { drawCard, drawOverlays } from './graphics.js';
+import { drawPhotos } from './photos.js';
 import { clamp, mkCanvas, waitEvent } from './util.js';
 
 export const FORMATS = {
@@ -76,6 +77,8 @@ export class Engine {
     this.ctx = canvas.getContext('2d');
     this.sources = { intro: null, main: null, outro: null };
     this.overlays = [];
+    this.music = null; // { buffer, offset, vol, bed }
+    this.musicPts = [];
     this.logo = null;
     this.format = '9x16';
     this.fit = 'auto';
@@ -135,8 +138,103 @@ export class Engine {
     });
     this.segments = list;
     this.total = t;
+    this.buildMusicEnv();
     if (this.t > this.total) this.t = this.total;
     this.emit('timeline', this.total);
+  }
+
+  // ---------- Música ----------
+  // Curva de volumen de la música a lo largo de la línea de tiempo
+  buildMusicEnv() {
+    const mu = this.music;
+    this.musicPts = [];
+    if (!mu || !this.total) return;
+    const T = this.total, v = mu.vol;
+    const m = this.mainSeg();
+    const duck = m && m.src.kind === 'video' && (m.volume ?? 1) > 0.05;
+    const b = duck ? mu.bed : v;
+    const pts = [[0, 0], [Math.min(0.4, T / 4), m && m.start < 0.05 ? b : v]];
+    if (m && b !== v) {
+      const du = clamp(Math.max(m.ov || 0, 0.8), 0.2, m.dur / 2);
+      if (m.start >= 0.05) { pts.push([m.start, v], [m.start + du, b]); }
+      if (m.end < T - 0.05) { pts.push([m.end - du, b], [m.end, v]); }
+    }
+    const f = Math.min(LAST_FADE + 0.3, T / 3);
+    const lastLevel = m && m.end >= T - 0.05 ? b : v;
+    pts.push([T - f, lastLevel], [T, 0]);
+    // la canción termina antes que el video: fundido al final de la canción
+    const songEnd = mu.buffer.duration - mu.offset;
+    let out = pts.filter((p) => p[0] >= 0).sort((a, c) => a[0] - c[0]);
+    if (songEnd < T) {
+      const fe = Math.max(0, songEnd - 0.8);
+      const lv = this.levelAt(out, fe);
+      out = out.filter((p) => p[0] < fe).concat([[fe, lv], [songEnd, 0]]);
+    }
+    this.musicPts = out;
+  }
+
+  levelAt(pts, t) {
+    if (!pts.length) return 0;
+    if (t <= pts[0][0]) return pts[0][1];
+    for (let i = 1; i < pts.length; i++) {
+      if (t <= pts[i][0]) {
+        const [t0, v0] = pts[i - 1], [t1, v1] = pts[i];
+        return t1 > t0 ? v0 + ((v1 - v0) * (t - t0)) / (t1 - t0) : v1;
+      }
+    }
+    return pts[pts.length - 1][1];
+  }
+
+  setMusic(m) { this.music = m; this.buildMusicEnv(); if (this.playing) this.play(this.now()); }
+
+  scheduleMusic(from, base) {
+    const mu = this.music;
+    if (!mu || !this.musicPts.length) return;
+    const off = mu.offset + from;
+    if (off >= mu.buffer.duration - 0.05) return;
+    const ac = this.ac;
+    const g = ac.createGain();
+    g.connect(this.master);
+    g.gain.setValueAtTime(this.levelAt(this.musicPts, from), base);
+    for (const [t, v] of this.musicPts) if (t > from) g.gain.linearRampToValueAtTime(v, base + (t - from));
+    const src = ac.createBufferSource();
+    src.buffer = mu.buffer;
+    src.connect(g);
+    src.start(base, off, Math.max(0.05, Math.min(this.total - from, mu.buffer.duration - off)));
+    this.nodes.push({ src, g });
+  }
+
+  // Escuchar solo un pedazo de la música (al elegir el tramo)
+  previewMusic(offset, dur = 7) {
+    this.unlock();
+    this.stopMusicPreview();
+    if (this.playing) this.pause();
+    const mu = this.music; if (!mu) return;
+    const ac = this.ac, t0 = ac.currentTime + 0.05;
+    const g = ac.createGain();
+    g.connect(this.master);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(mu.vol, t0 + 0.15);
+    g.gain.setValueAtTime(mu.vol, t0 + dur - 0.6);
+    g.gain.linearRampToValueAtTime(0, t0 + dur);
+    const src = ac.createBufferSource();
+    src.buffer = mu.buffer; src.connect(g);
+    src.start(t0, offset, dur);
+    this._mprev = { src, g, t0, offset, dur };
+    src.onended = () => { if (this._mprev && this._mprev.src === src) this._mprev = null; };
+  }
+
+  musicPreviewPos() {
+    const p = this._mprev; if (!p || !this.ac) return null;
+    const e = this.ac.currentTime - p.t0;
+    return e >= 0 && e <= p.dur ? p.offset + e : null;
+  }
+
+  stopMusicPreview() {
+    const p = this._mprev; if (!p) return;
+    try { p.src.stop(); } catch (e) { /* */ }
+    try { p.g.disconnect(); } catch (e) { /* */ }
+    this._mprev = null;
   }
 
   mainSeg() { return this.segments.find((s) => s.role === 'main'); }
@@ -163,6 +261,8 @@ export class Engine {
       if (a <= 0.001) continue;
       if (s.src.kind === 'card') {
         drawCard(ctx, lt, W, H, s.src.params, a, this.logo);
+      } else if (s.src.kind === 'photos') {
+        drawPhotos(ctx, s.src, lt, W, H, this.fit, a);
       } else {
         this.drawVideo(ctx, s.src.el, W, H, s.role === 'main' ? this.fit : 'clip', a);
       }
@@ -313,12 +413,14 @@ export class Engine {
     if (from >= this.total - 0.05) from = 0;
     this.cancelLoop();
     this.stopAudio();
+    this.stopMusicPreview();
     this.pauseVideos();
     this.segments.forEach((s) => { s.prepped = false; });
     await this.prepareVideos(from);
     const base = this.ac.currentTime + 0.12;
     this.clock = { from, base };
     for (const s of this.segments) this.scheduleAudio(s, from, base);
+    this.scheduleMusic(from, base);
     this.playing = true;
     this.emit('state', true);
     const loop = () => {
