@@ -10,6 +10,7 @@ export const FORMATS = {
 };
 
 const LAST_FADE = 0.45;
+let aacRegistered = false;
 const AC = () => window.AudioContext || window.webkitAudioContext;
 
 let hiddenHost = null;
@@ -187,21 +188,20 @@ export class Engine {
 
   setMusic(m) { this.music = m; this.buildMusicEnv(); if (this.playing) this.play(this.now()); }
 
-  scheduleMusic(from, base) {
+  scheduleMusic(from, base, ac = this.ac, dest = this.master, live = true) {
     const mu = this.music;
     if (!mu || !this.musicPts.length) return;
     const off = mu.offset + from;
     if (off >= mu.buffer.duration - 0.05) return;
-    const ac = this.ac;
     const g = ac.createGain();
-    g.connect(this.master);
+    g.connect(dest);
     g.gain.setValueAtTime(this.levelAt(this.musicPts, from), base);
     for (const [t, v] of this.musicPts) if (t > from) g.gain.linearRampToValueAtTime(v, base + (t - from));
     const src = ac.createBufferSource();
     src.buffer = mu.buffer;
     src.connect(g);
     src.start(base, off, Math.max(0.05, Math.min(this.total - from, mu.buffer.duration - off)));
-    this.nodes.push({ src, g });
+    if (live) this.nodes.push({ src, g });
   }
 
   // Escuchar solo un pedazo de la música (al elegir el tramo)
@@ -264,7 +264,7 @@ export class Engine {
       } else if (s.src.kind === 'photos') {
         drawPhotos(ctx, s.src, lt, W, H, this.fit, a);
       } else {
-        this.drawVideo(ctx, s.src.el, W, H, s.role === 'main' ? this.fit : 'clip', a);
+        this.drawVideo(ctx, s.src.frame || s.src.el, W, H, s.role === 'main' ? this.fit : 'clip', a);
       }
       if (s.role === 'main') drawOverlays(ctx, lt, W, H, this.overlays, a, this.logo);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
@@ -272,8 +272,9 @@ export class Engine {
   }
 
   drawVideo(ctx, el, W, H, mode, a) {
-    const vw = el.videoWidth, vh = el.videoHeight;
-    if (!vw || !vh || el.readyState < 2) return;
+    if (!el) return;
+    const vw = el.videoWidth || el.width, vh = el.videoHeight || el.height;
+    if (!vw || !vh || (el.readyState !== undefined && el.readyState < 2)) return;
     const ar = vw / vh, AR = W / H;
     if (mode === 'auto') mode = Math.abs(ar - AR) / AR < 0.12 ? 'cover' : 'blur';
     if (mode === 'clip') mode = ar < AR ? 'cover' : 'contain';
@@ -328,12 +329,17 @@ export class Engine {
         const exp = s.in + (t - s.start);
         if (el.paused) {
           if (Math.abs(el.currentTime - exp) > 0.08) el.currentTime = exp;
+          el.playbackRate = 1;
           const p = el.play(); if (p && p.catch) p.catch(() => {});
-        } else if (Math.abs(el.currentTime - exp) > 0.3) {
-          el.currentTime = exp;
+        } else {
+          // corrige el desfase acelerando o frenando apenas, sin saltos visibles
+          const diff = el.currentTime - exp;
+          if (Math.abs(diff) > 1.0) { el.currentTime = exp; el.playbackRate = 1; }
+          else if (Math.abs(diff) > 0.04) el.playbackRate = clamp(1 - diff * 0.8, 0.9, 1.1);
+          else if (el.playbackRate !== 1) el.playbackRate = 1;
         }
       } else {
-        if (!el.paused) el.pause();
+        if (!el.paused) { el.pause(); el.playbackRate = 1; }
         if (t < s.start && t > s.start - 1.2 && !s.prepped && Math.abs(el.currentTime - s.in) > 0.05) { el.currentTime = s.in; s.prepped = true; }
       }
     }
@@ -373,18 +379,17 @@ export class Engine {
     this.nodes = [];
   }
 
-  scheduleAudio(s, from, base) {
+  scheduleAudio(s, from, base, ac = this.ac, dest = this.master, live = true) {
     if (from >= s.end) return;
     const audio = s.src.audioBuffer;
-    const useEl = !audio && s.src.useElementAudio && s.src.el;
+    const useEl = live && !audio && s.src.useElementAudio && s.src.el;
     if (!audio && !useEl) return;
-    const ac = this.ac;
     const off = Math.max(0, from - s.start);
     const when = base + Math.max(0, s.start - from);
     const d = s.dur, fi = s.aIn, fo = s.aOut, vol = s.volume ?? 1;
     const env = (x) => vol * clamp(Math.min(fi > 0 ? x / fi : 1, fo > 0 ? (d - x) / fo : 1));
     const g = ac.createGain();
-    g.connect(this.master);
+    g.connect(dest);
     g.gain.setValueAtTime(env(off), when);
     [fi, d - fo, d].filter((x) => x > off).sort((a, b) => a - b)
       .forEach((x) => g.gain.linearRampToValueAtTime(env(x), when + (x - off)));
@@ -394,7 +399,7 @@ export class Engine {
       src.connect(g);
       const startOff = s.in + off;
       if (startOff < audio.duration) src.start(when, startOff, Math.max(0.01, d - off));
-      this.nodes.push({ src, g });
+      if (live) this.nodes.push({ src, g });
     } else {
       const el = s.src.el;
       if (!el._srcNode) el._srcNode = ac.createMediaElementSource(el);
@@ -486,7 +491,145 @@ export class Engine {
   cancelExport() { if (!this.exporting) return; this._cancel = true; if (this.playing) this.finish(); else this.emit('end'); }
 
   // ---------- Exportar ----------
-  async export({ onProgress, only = null } = {}) {
+  // 1) Cuadro por cuadro con WebCodecs (sin tirones, siempre H.264/AAC)
+  // 2) Si el navegador no puede, grabación en tiempo real (MediaRecorder)
+  async export(opts = {}) {
+    try {
+      const blob = await this.exportOffline(opts);
+      if (blob) return blob;
+    } catch (e) {
+      if (e && e.message === 'cancelado') throw e;
+      console.warn('Exportación cuadro por cuadro falló, uso tiempo real', e);
+    }
+    return this.exportRealtime(opts);
+  }
+
+  // Pre-arma letras doradas y gráficas a resolución final para que no haya cuadros lentos al grabar
+  prewarm(ctx) {
+    const ts = new Set([0]);
+    for (const s of this.segments) { ts.add(s.start + Math.min(1.5, s.dur / 2)); ts.add(s.start + Math.min(2.5, s.dur * 0.8)); }
+    const m = this.mainSeg();
+    if (m) for (const o of this.overlays) ts.add(m.start + clamp((o.start || 0) + 1.2, 0, m.dur));
+    for (const t of ts) this.renderAt(Math.min(t, this.total), ctx);
+  }
+
+  async exportOffline({ onProgress, only = null } = {}) {
+    if (typeof VideoEncoder === 'undefined' || typeof AudioEncoder === 'undefined' || typeof OfflineAudioContext === 'undefined') return null;
+    let MB;
+    try { MB = await import('mediabunny'); } catch (e) { return null; }
+    if (this.exporting) throw new Error('Ya hay una exportación en curso');
+    this.pause();
+    const saved = only ? { ...this.sources } : null;
+    const savedOv = this.overlays;
+    if (only) { this.sources = { intro: null, main: null, outro: null, [only.role]: only.src }; this.overlays = []; this.rebuild(); }
+    this.exporting = true;
+    this._cancel = false;
+    const FPS = 30;
+    const f = FORMATS[this.format];
+    const W = f.w, H = f.h;
+    const inputs = [], cursors = new Map();
+    let wake = null;
+    const restore = () => {
+      for (const c of cursors.values()) c.close();
+      inputs.forEach((i) => { try { i.dispose(); } catch (e) { /* */ } });
+      for (const s of this.segments) delete s.src.frame;
+      try { wake && wake.release(); } catch (e) { /* */ }
+      if (only) { this.sources = saved; this.overlays = savedOv; this.rebuild(); }
+      this.exporting = false;
+      this.t = 0;
+      this.refresh();
+    };
+    let output = null;
+    try {
+      const okV = await MB.canEncodeVideo('avc', { width: W, height: H, bitrate: 8e6 });
+      const aCfg = { numberOfChannels: 2, sampleRate: 48000, bitrate: 192e3 };
+      let okA = await MB.canEncodeAudio('aac', aCfg);
+      if (!okA && !aacRegistered) {
+        // navegadores sin AAC nativo (algunos iPhone / Linux): encoder AAC en WebAssembly
+        try { const { registerAacEncoder } = await import('./vendor/mediabunny-aac-encoder.min.mjs'); registerAacEncoder(); aacRegistered = true; } catch (e) { /* */ }
+        okA = await MB.canEncodeAudio('aac', aCfg);
+      }
+      if (!okV || !okA) { restore(); return null; }
+
+      for (const s of this.videoSegs()) {
+        const blob = s.src.blob;
+        if (!blob) { restore(); return null; }
+        const input = new MB.Input({ source: new MB.BlobSource(blob), formats: MB.ALL_FORMATS });
+        inputs.push(input);
+        const vt = await input.getPrimaryVideoTrack();
+        if (!vt || !(await vt.canDecode())) { restore(); return null; }
+        // el audio no se pudo decodificar antes pero existe → mejor tiempo real
+        if (!s.src.audioBuffer && s.src.useElementAudio && (await input.getPrimaryAudioTrack())) { restore(); return null; }
+        const k = Math.min(1, 1920 / Math.max(vt.displayWidth, vt.displayHeight));
+        const sink = new MB.CanvasSink(vt, { width: Math.max(2, Math.round(vt.displayWidth * k)), poolSize: 4 });
+        cursors.set(s, new FrameCursor(sink.canvases(s.in, s.in + s.dur + 0.25)));
+      }
+
+      // Mezcla de audio exacta, fuera de tiempo real
+      const SR = 48000, N = Math.max(1, Math.round(this.total * FPS));
+      const len = Math.round((N / FPS) * SR);
+      const oac = new OfflineAudioContext(2, len, SR);
+      const mg = oac.createGain();
+      mg.connect(oac.destination);
+      for (const s of this.segments) this.scheduleAudio(s, 0, 0, oac, mg, false);
+      this.scheduleMusic(0, 0, oac, mg, false);
+      const mix = await oac.startRendering();
+
+      const work = mkCanvas(W, H);
+      const wctx = work.getContext('2d');
+      output = new MB.Output({ format: new MB.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new MB.BufferTarget() });
+      const vsrc = new MB.CanvasSource(work, { codec: 'avc', bitrate: 8_000_000, keyFrameInterval: 2 });
+      output.addVideoTrack(vsrc, { frameRate: FPS });
+      const asrc = new MB.AudioBufferSource({ codec: 'aac', bitrate: 192_000 });
+      output.addAudioTrack(asrc);
+      await output.start();
+      try { wake = await navigator.wakeLock?.request('screen'); } catch (e) { /* */ }
+
+      const chunk = SR; // 1 s de audio por vez, intercalado con el video
+      let aPos = 0;
+      const pushAudio = async (upTo) => {
+        while (aPos < Math.min(upTo, len)) {
+          const n = Math.min(chunk, len - aPos);
+          const ab = new AudioBuffer({ length: n, numberOfChannels: 2, sampleRate: SR });
+          for (let c = 0; c < 2; c++) ab.copyToChannel(mix.getChannelData(c).subarray(aPos, aPos + n), c);
+          await asrc.add(ab);
+          aPos += n;
+        }
+      };
+
+      let lastYield = performance.now();
+      for (let i = 0; i < N; i++) {
+        if (this._cancel) throw new Error('cancelado');
+        const t = i / FPS;
+        for (const [s, cur] of cursors) {
+          if (t >= s.start - 0.001 && t <= s.end + 0.001) s.src.frame = await cur.at(s.in + clamp(t - s.start, 0, s.dur));
+        }
+        this.renderAt(t, wctx);
+        await vsrc.add(t, 1 / FPS);
+        await pushAudio(Math.round((t + 1) * SR));
+        if (performance.now() - lastYield > 150) {
+          this.ctx.drawImage(work, 0, 0, this.canvas.width, this.canvas.height);
+          onProgress && onProgress((i + 1) / N);
+          this.emit('time', t);
+          await new Promise((r) => setTimeout(r, 0));
+          lastYield = performance.now();
+        }
+      }
+      await pushAudio(len);
+      onProgress && onProgress(1);
+      await output.finalize();
+      const blob = new Blob([output.target.buffer], { type: 'video/mp4' });
+      blob.codecs = 'avc1,mp4a';
+      restore();
+      return blob;
+    } catch (e) {
+      try { output && output.state !== 'finalized' && (await output.cancel()); } catch (x) { /* */ }
+      restore();
+      throw e;
+    }
+  }
+
+  async exportRealtime({ onProgress, only = null } = {}) {
     if (this.exporting) throw new Error('Ya hay una exportación en curso');
     const mime = pickMime();
     if (mime === null || !this.canvas.captureStream) throw new Error('Este navegador no puede grabar video. Probá con Chrome o Safari actualizados.');
@@ -535,6 +678,7 @@ export class Engine {
 
     try {
       this.t = 0;
+      this.prewarm(this.ctx);
       await this.prepareVideos(0);
       this.renderAt(0);
       const ended = new Promise((res) => {
@@ -565,4 +709,22 @@ export class Engine {
     blob.codecs = full;
     return blob;
   }
+}
+
+// Recorre los cuadros decodificados de un video en orden y devuelve el que corresponde a cada tiempo
+class FrameCursor {
+  constructor(gen) { this.gen = gen; this.cur = null; this.next = null; this.done = false; }
+  async pull() {
+    const r = await this.gen.next();
+    if (r.done) { this.done = true; this.next = null; } else this.next = r.value;
+  }
+  async at(time) {
+    if (!this.next && !this.done && !this.cur) await this.pull();
+    while (this.next && this.next.timestamp <= time + 1e-4) {
+      this.cur = this.next;
+      await this.pull();
+    }
+    return (this.cur || this.next)?.canvas || null;
+  }
+  close() { try { this.gen.return(); } catch (e) { /* */ } }
 }

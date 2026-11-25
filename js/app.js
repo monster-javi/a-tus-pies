@@ -133,7 +133,7 @@ $('#mainFile').addEventListener('change', async (e) => {
     const url = URL.createObjectURL(file);
     const el = await makeVideo(url);
     if (tok !== mainToken) return;
-    const src = { kind: 'video', el, file, duration: el.duration, in: 0, out: el.duration, volume: state.volume };
+    const src = { kind: 'video', el, file, blob: file, duration: el.duration, in: 0, out: el.duration, volume: state.volume };
     videoSrc = src;
     applyMode();
     engine.unlockElement(el);
@@ -421,19 +421,21 @@ const clipCache = new Map();
 
 async function loadVideoClip(key, urlOrFile) {
   if (clipCache.has(key)) return clipCache.get(key);
-  let buf, blobUrl;
+  let buf, blobUrl, blob;
   if (typeof urlOrFile === 'string') {
     const r = await fetch(urlOrFile);
     if (!r.ok) throw new Error('No se encontró ' + urlOrFile);
     buf = await r.arrayBuffer();
-    blobUrl = URL.createObjectURL(new Blob([buf], { type: 'video/mp4' }));
+    blob = new Blob([buf], { type: 'video/mp4' });
+    blobUrl = URL.createObjectURL(blob);
   } else {
+    blob = urlOrFile;
     blobUrl = URL.createObjectURL(urlOrFile);
     buf = await urlOrFile.arrayBuffer();
   }
   const el = await makeVideo(blobUrl);
   engine.unlockElement(el);
-  const src = { kind: 'video', el, duration: el.duration, volume: 1 };
+  const src = { kind: 'video', el, blob, duration: el.duration, volume: 1 };
   try { src.audioBuffer = await decodeAudio(buf); } catch (e) { src.useElementAudio = true; }
   clipCache.set(key, src);
   return src;

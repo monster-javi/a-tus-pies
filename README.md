@@ -14,7 +14,7 @@ Funciona entera en el navegador: los videos no se suben a ningún servidor. Anda
 5. **Gráficas**: zócalos, título dorado, mosca/logo, brillos y marco dorado. El **logo del club** se sube con fondo negro y se suma en modo *add* (el negro desaparece).
 6. **Exportar**: crea el video y abre *Guardar / Compartir* (en el iPhone permite guardarlo en Fotos o mandarlo directo a Instagram).
 
-La exportación se hace en tiempo real, así que tarda lo mismo que dura el video. Mientras tanto la pantalla tiene que quedar encendida, sin cambiar de app.
+La exportación arma el video cuadro por cuadro, así que no hay tirones aunque el celular sea lento. Mientras se crea, la pantalla tiene que quedar encendida y sin cambiar de app.
 
 ## Sumar intros y finales a la biblioteca
 
@@ -44,6 +44,7 @@ Para cambiar los textos, editá `CLIPS` en `tools/render-clips.mjs`.
 ## Técnica
 
 - HTML/CSS/JS sin dependencias ni build (módulos ES). Se puede publicar en GitHub Pages o Cloudflare Pages tal cual.
-- El render se hace en Canvas 2D. El audio se mezcla con Web Audio (con fundidos programados) y la grabación usa `MediaRecorder` (MP4 H.264/AAC en Chrome y Safari).
+- El render se hace en Canvas 2D. Para exportar se dibuja cuadro por cuadro y se codifica con WebCodecs usando [Mediabunny](https://mediabunny.dev) (en `js/vendor`, licencia MPL-2.0): siempre sale MP4 H.264 + AAC a 30 fps constantes. El audio se mezcla aparte con un `OfflineAudioContext`. Si el navegador no tiene AAC nativo, se usa el encoder AAC en WebAssembly de `@mediabunny/aac-encoder` (FFmpeg, LGPL; licencias en `js/vendor/licenses`).
+- Si el navegador no soporta WebCodecs, se usa la grabación en tiempo real con `MediaRecorder` como respaldo.
 - `js/gold.js`: letras doradas (bisel, halo, barrido de luz y destellos). `js/particles.js`: glitter. `js/graphics.js`: tarjetas, zócalos y overlays. `js/engine.js`: línea de tiempo, preview y exportación. `js/app.js`: interfaz.
 - Tipografías: Cinzel y Cormorant Garamond (SIL Open Font License, en `assets/fonts`).
